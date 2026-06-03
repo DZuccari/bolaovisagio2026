@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -235,13 +235,6 @@ const dayKeySP=dt=>new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo'
 const started=dt=>new Date(dt).getTime()<=Date.now();
 const isToday=dt=>dayKeySP(dt)===dayKeySP(new Date());
 const isUpcoming=dt=>{const h=(new Date(dt).getTime()-Date.now())/3600000;return h>0&&h<=24;};
-const timeUntilShort=dt=>{
-  const mins=Math.max(0,Math.round((new Date(dt).getTime()-Date.now())/60000));
-  if(mins<60) return `${mins}min`;
-  const hours=Math.round(mins/60);
-  if(hours<48) return `${hours}h`;
-  return `${Math.round(hours/24)}d`;
-};
 const normalizeName=value=>value.trim().replace(/\s+/g,' ');
 const isValidName=name=>name.length>=2&&name.length<=24&&!/[.#$\[\]/]/.test(name);
 const parseScore=value=>{
@@ -697,16 +690,15 @@ function Bolao(){
   };
 
   // ── Computed ────────────────────────────────────────────────────────────────
-  const scoredMatches=matches.filter(m=>m.result&&m.result.home!==''&&m.result.home!==undefined);
-  const scoreBoardForMatches=(scopeMatches,{includeChampion=false}={})=>[...parts].map(uid=>{
+  const board=[...parts].map(uid=>{
     const name=getName(uid);
     let pts=0,exact=0,win=0,miss=0,total=0;
-    scopeMatches.forEach(m=>{
+    matches.forEach(m=>{
       const p=(preds[uid]||{})[m.id]; if(!p) return;
       const x=calcPts(p,m.result); if(x===null) return;
       total++;pts+=x;if(x===3)exact++;else if(x===1)win++;else miss++;
     });
-    const champHit = includeChampion&&champWinner&&champPreds[uid]===champWinner;
+    const champHit = champWinner&&champPreds[uid]===champWinner;
     if(champHit) pts+=CHAMP_PTS;
     return {uid,name,pts,exact,win,miss,total,champHit:champHit?1:0};
   }).sort((a,b)=>
@@ -717,18 +709,6 @@ function Bolao(){
     a.miss-b.miss ||
     a.name.localeCompare(b.name,'pt-BR')
   );
-  const board=scoreBoardForMatches(matches,{includeChampion:true});
-  const myPredMap=preds[me]||{};
-  const savedPredCount=matches.filter(m=>myPredMap[m.id]&&myPredMap[m.id].home!=='').length;
-  const progressPct=matches.length?Math.round(savedPredCount/matches.length*100):0;
-  const pendingMatches=matches
-    .filter(m=>!started(m.dt)&&(!myPredMap[m.id]||myPredMap[m.id].home===''))
-    .sort((a,b)=>new Date(a.dt)-new Date(b.dt));
-  const urgentPendingAll=pendingMatches.filter(m=>new Date(m.dt).getTime()-Date.now()<=48*3600000);
-  const urgentPending=urgentPendingAll.slice(0,4);
-  const nextMatches=matches.filter(m=>!started(m.dt)).sort((a,b)=>new Date(a.dt)-new Date(b.dt)).slice(0,4);
-  const champDone=!!champPreds[me];
-  const actionCount=urgentPendingAll.length+(!champDone&&!champLocked?1:0);
 
   const myStats=(()=>{
     let pts=0,exact=0,win=0,miss=0,total=0;
@@ -739,7 +719,7 @@ function Bolao(){
     });
     if(champWinner&&champPreds[me]===champWinner) pts+=CHAMP_PTS;
     const rank=board.findIndex(p=>p.uid===me)+1;
-    const missing=pendingMatches.length;
+    const missing=matches.filter(m=>!started(m.dt)&&(!(preds[me]||{})[m.id]||(preds[me]||{})[m.id].home==='')).length;
     return {pts,exact,win,miss,total,rank:rank||null,pct:total>0?Math.round((exact+win)/total*100):0,missing};
   })();
 
@@ -788,10 +768,6 @@ function Bolao(){
   };
   const predictionDayGroups=groupByDay(predictionMatches);
   const generalDayGroups=groupByDay(matches);
-  const dailyBoards=groupByDay(scoredMatches).map(group=>({
-    ...group,
-    board:scoreBoardForMatches(group.matches).filter(p=>p.total>0||p.pts>0),
-  })).filter(group=>group.board.length>0);
   const champPredCount=parts.filter(p=>champPreds[p]).length;
 
   // ── Match Card ──────────────────────────────────────────────────────────────
@@ -805,19 +781,15 @@ function Bolao(){
     const ptBg=pts===3?T.okBg:pts===1?T.halfBg:pts===0?T.errBg:null;
     const ptCol=pts===3?T.ok:pts===1?T.half:pts===0?T.err:null;
     const ptLabel=pts===3?'⭐ Exato':pts===1?'✓ Vencedor':pts===0?'✗ Errou':null;
-    const dirty=String(inp.home??'')!==String(myS?.home??'')||String(inp.away??'')!==String(myS?.away??'');
-    const statusColor=hasR?T.gold:st?'#1D4ED8':hasPred?T.accent:T.half;
-    const statusBg=hasR?T.goldBg:st?'#DBEAFE':hasPred?T.accentLt:T.halfBg;
-    const statusText=hasR?'Resultado':st?'Fechado':hasPred?'Salvo':'Pendente';
 
     return (
-      <div className="match-card" style={{background:T.card,borderRadius:16,border:`1px solid ${hasPred||hasR||st?T.border:'#FCD34D'}`,borderLeft:`4px solid ${statusColor}`,marginBottom:10,overflow:'hidden',boxShadow:hasPred||hasR||st?shadow:'0 8px 24px rgba(217,119,6,.12)'}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,padding:'9px 14px',borderBottom:`1px solid ${T.border}`,background:hasPred&&!st?T.accentLt:T.bg}}>
+      <div className="match-card" style={{background:T.card,borderRadius:16,border:`1px solid ${T.border}`,marginBottom:10,overflow:'hidden',boxShadow:shadow}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'9px 14px',borderBottom:`1px solid ${T.border}`,background:T.bg}}>
           <span style={{fontSize:11,fontWeight:700,color:T.accent,background:T.accentLt,padding:'2px 9px',borderRadius:20}}>
             {m.ph==='Grupos'?`Grupo ${m.gr}`:m.ph}
           </span>
           <span style={{fontSize:11,color:T.txt3,flex:1}}>{fDate(m.dt)} · {fTime(m.dt)}</span>
-          <span style={{fontSize:10,fontWeight:800,color:statusColor,background:statusBg,padding:'2px 9px',borderRadius:20}}>{statusText}</span>
+          {st&&!hasR&&<span style={{fontSize:10,fontWeight:600,color:'#1D4ED8',background:'#DBEAFE',padding:'2px 9px',borderRadius:20}}>🔒 Em jogo</span>}
           {ptLabel&&<span style={{fontSize:10,fontWeight:700,color:ptCol,background:ptBg,padding:'2px 9px',borderRadius:20}}>{ptLabel}</span>}
           {hasR&&!ptLabel&&pts===null&&<span style={{fontSize:10,color:T.txt3,background:T.bg,padding:'2px 8px',borderRadius:20,border:`1px solid ${T.border}`}}>sem palpite</span>}
         </div>
@@ -844,8 +816,8 @@ function Bolao(){
               !hasR&&<span style={{fontSize:13,color:T.txt3,fontWeight:600,letterSpacing:2}}>VS</span>
             )}
             {!st&&(
-              <button className="btn-acc" style={{padding:'4px 14px',borderRadius:8,border:'none',cursor:(!hasPred||dirty)&&saving!==m.id?'pointer':'default',fontSize:11,fontWeight:700,background:(!hasPred||dirty)?T.accent:T.accentLt,color:(!hasPred||dirty)?'#fff':T.accent,opacity:saving===m.id||(!dirty&&hasPred) ? .72 : 1}} onClick={()=>savePred(m.id)} disabled={saving===m.id||(!dirty&&hasPred)}>
-                {saving===m.id?'salvando...':hasPred?(dirty?'Atualizar':'✓ Salvo'):'Salvar'}
+              <button className="btn-acc" style={{padding:'4px 14px',borderRadius:8,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,background:hasPred?T.accentLt:'#EFF6FF',color:hasPred?T.accent:'#1D4ED8',opacity:saving===m.id ? .6 : 1}} onClick={()=>savePred(m.id)} disabled={saving===m.id}>
+                {saving===m.id?'...':hasPred?'✓ Salvo':'Salvar'}
               </button>
             )}
             {st&&hasPred&&<div style={{fontSize:10,color:T.txt3}}>Seu: {myS.home}×{myS.away}</div>}
@@ -967,86 +939,17 @@ function Bolao(){
         </button>
       </div>
 
-      {/* Progress */}
-      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:'16px',marginBottom:14,boxShadow:shadow}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:12}}>
-          <div>
-            <div style={{fontSize:14,fontWeight:800,color:T.txt1}}>Seu progresso</div>
-            <div style={{fontSize:11,color:T.txt3,marginTop:2}}>{savedPredCount}/{matches.length} palpites de jogos feitos</div>
-          </div>
-          <div style={{fontSize:24,fontWeight:900,color:progressPct===100?T.accent:T.txt1}}>{progressPct}%</div>
-        </div>
-        <div style={{height:9,background:T.bg,borderRadius:999,overflow:'hidden',marginBottom:12}}>
-          <div style={{height:'100%',width:`${progressPct}%`,background:'linear-gradient(90deg,#16a34a,#84cc16)',borderRadius:999}}/>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-          {[
-            {v:savedPredCount,l:'salvos',c:T.accent,b:T.accentLt},
-            {v:myStats.missing,l:'faltando',c:myStats.missing?T.half:T.accent,b:myStats.missing?T.halfBg:T.accentLt},
-            {v:champDone?'sim':'não',l:'campeão',c:champDone?T.gold:T.txt3,b:champDone?T.goldBg:T.bg},
-            {v:urgentPendingAll.length,l:'48h',c:urgentPendingAll.length?T.err:T.txt3,b:urgentPendingAll.length?T.errBg:T.bg},
-          ].map(item=>(
-            <div key={item.l} style={{background:item.b,borderRadius:12,padding:'9px 6px',textAlign:'center',border:`1px solid ${T.border}`}}>
-              <div style={{fontSize:16,fontWeight:900,color:item.c,lineHeight:1,textTransform:'uppercase'}}>{item.v}</div>
-              <div style={{fontSize:9,color:T.txt3,marginTop:4}}>{item.l}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Action center */}
-      <div style={{background:actionCount?T.halfBg:T.card,border:`1px solid ${actionCount?'#FCD34D':T.border}`,borderRadius:16,padding:'16px',marginBottom:14,boxShadow:shadow}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
-          <div style={{width:36,height:36,borderRadius:12,background:actionCount?'#FEF3C7':T.accentLt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>
-            {actionCount?'⚠️':'✅'}
-          </div>
+      {/* Missing alert */}
+      {myStats.missing>0&&(
+        <div style={{display:'flex',alignItems:'center',gap:12,background:T.halfBg,border:`1px solid #FCD34D`,borderRadius:14,padding:'12px 16px',marginBottom:14}}>
+          <span style={{fontSize:20}}>⚠️</span>
           <div style={{flex:1}}>
-            <div style={{fontSize:14,fontWeight:800,color:T.txt1}}>Prioridades agora</div>
-            <div style={{fontSize:11,color:T.txt3,marginTop:1}}>{actionCount?`${actionCount} item${actionCount!==1?'s':''} pedindo atenção`:'Tudo certo por enquanto'}</div>
+            <div style={{fontSize:13,fontWeight:700,color:T.half}}>{myStats.missing} palpite{myStats.missing>1?'s':''} faltando</div>
+            <div style={{fontSize:11,color:'#92400E',marginTop:1}}>jogos que ainda não foram preenchidos</div>
           </div>
-          {myStats.missing>0&&(
-            <button style={{padding:'6px 12px',borderRadius:10,border:'none',background:T.half,color:'#fff',fontSize:11,fontWeight:800,cursor:'pointer'}} onClick={()=>{setTab('matches');setOnlyMissing(true);}}>Ver faltando</button>
-          )}
+          <button style={{padding:'6px 14px',borderRadius:10,border:'none',background:T.half,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer'}} onClick={()=>{setTab('matches');setOnlyMissing(true);}}>Ver →</button>
         </div>
-        {!champDone&&!champLocked&&(
-          <button style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${T.border}`,background:T.card,cursor:'pointer',marginBottom:8,textAlign:'left'}} onClick={()=>document.getElementById('champion-card')?.scrollIntoView({behavior:'smooth',block:'center'})}>
-            <span style={{fontSize:18}}>🏆</span>
-            <span style={{flex:1}}>
-              <span style={{display:'block',fontSize:12,fontWeight:800,color:T.txt1}}>Escolha seu campeão</span>
-              <span style={{display:'block',fontSize:10,color:T.txt3,marginTop:1}}>Trava no início da Copa: {champLockLabel}</span>
-            </span>
-          </button>
-        )}
-        {urgentPending.map(m=>(
-          <button key={m.id} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${T.border}`,background:T.card,cursor:'pointer',marginBottom:8,textAlign:'left'}} onClick={()=>{setTab('matches');setOnlyMissing(true);}}>
-            <span style={{fontSize:18}}>{fl(m.home)}</span>
-            <span style={{flex:1,minWidth:0}}>
-              <span style={{display:'block',fontSize:12,fontWeight:800,color:T.txt1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{m.home} × {m.away}</span>
-              <span style={{display:'block',fontSize:10,color:T.txt3,marginTop:1}}>{fDate(m.dt)} às {fTime(m.dt)} · falta {timeUntilShort(m.dt)}</span>
-            </span>
-            <span style={{fontSize:18}}>{fl(m.away)}</span>
-          </button>
-        ))}
-        {urgentPendingAll.length>urgentPending.length&&(
-          <button style={{width:'100%',padding:'9px 12px',borderRadius:12,border:`1px dashed #F59E0B`,background:'rgba(255,255,255,.55)',color:T.half,fontSize:11,fontWeight:800,cursor:'pointer'}} onClick={()=>{setTab('matches');setOnlyMissing(true);}}>
-            Ver mais {urgentPendingAll.length-urgentPending.length} pendente{urgentPendingAll.length-urgentPending.length!==1?'s':''} nas próximas 48h
-          </button>
-        )}
-        {actionCount===0&&nextMatches.length>0&&(
-          <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            {nextMatches.slice(0,3).map(m=>(
-              <div key={m.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${T.border}`,background:T.bg}}>
-                <span style={{fontSize:17}}>{fl(m.home)}</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:12,fontWeight:800,color:T.txt1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{m.home} × {m.away}</div>
-                  <div style={{fontSize:10,color:T.txt3,marginTop:1}}>Próximo jogo em {timeUntilShort(m.dt)}</div>
-                </div>
-                <span style={{fontSize:17}}>{fl(m.away)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Champion */}
       <div id="champion-card" style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:'16px',marginBottom:14,boxShadow:shadow}}>
@@ -1108,7 +1011,7 @@ function Bolao(){
       {matches.filter(m=>isToday(m.dt)||isUpcoming(m.dt)).length===0&&(
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:'28px 20px',textAlign:'center',boxShadow:shadow}}>
           <div style={{fontSize:36,marginBottom:8}}>🗓️</div>
-          <div style={{fontSize:14,color:T.txt2,lineHeight:1.6}}>Nenhum jogo nas próximas 24h.<br/>{nextMatches[0]?<>Próximo: <strong style={{color:T.accent}}>{fDate(nextMatches[0].dt)} às {fTime(nextMatches[0].dt)}</strong>.</>:<>Aguardando próximos jogos.</>}</div>
+          <div style={{fontSize:14,color:T.txt2,lineHeight:1.6}}>Nenhum jogo hoje.<br/>A Copa começa em <strong style={{color:T.accent}}>11 de junho</strong>!</div>
         </div>
       )}
       <div style={{height:88}}/>
@@ -1175,33 +1078,6 @@ function Bolao(){
         ))}
         {board.length===0&&<div style={{padding:'28px',fontSize:13,color:T.txt3,textAlign:'center'}}>Nenhum palpite ainda.</div>}
       </div>
-      {dailyBoards.length>0&&(
-        <>
-          <div style={sec}>Ranking por dia</div>
-          {dailyBoards.slice().reverse().map((group,idx)=>(
-            <details key={group.key} open={idx===0} style={{marginBottom:8}}>
-              <summary style={{listStyle:'none',cursor:'pointer',background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:'12px 14px',boxShadow:shadow,display:'flex',alignItems:'center',gap:10}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:13,fontWeight:800,color:T.txt1,textTransform:'capitalize'}}>{group.label}</div>
-                  <div style={{fontSize:11,color:T.txt3,marginTop:2}}>{group.matches.length} jogo{group.matches.length!==1?'s':''} com resultado</div>
-                </div>
-                {group.board[0]&&<span style={{fontSize:11,fontWeight:800,color:T.gold,background:T.goldBg,borderRadius:20,padding:'4px 9px'}}>líder: {group.board[0].name}</span>}
-                <span style={{fontSize:15,color:T.txt3}}>⌄</span>
-              </summary>
-              <div style={{background:T.card,border:`1px solid ${T.border}`,borderTop:'none',borderRadius:'0 0 12px 12px',overflow:'hidden'}}>
-                {group.board.map((p,i)=>(
-                  <div key={p.uid} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:p.uid===me?'#F0FDF4':'transparent',borderBottom:i<group.board.length-1?`1px solid ${T.border}`:'none'}}>
-                    <span style={{fontSize:14,width:24,textAlign:'center',fontWeight:900,color:i===0?T.gold:T.txt3}}>{i+1}º</span>
-                    <span style={{flex:1,fontSize:12,fontWeight:800,color:p.uid===me?T.accent:T.txt1}}>{p.name}{p.uid===me&&<span style={{fontSize:10,color:T.txt3,fontWeight:500}}> · você</span>}</span>
-                    <span style={{fontSize:10,color:T.txt3}}>{p.exact} exatos · {p.win} vencedores</span>
-                    <span style={{fontSize:16,fontWeight:900,color:T.txt1,minWidth:24,textAlign:'right'}}>{p.pts}</span>
-                  </div>
-                ))}
-              </div>
-            </details>
-          ))}
-        </>
-      )}
       {matches.filter(m=>m.result?.home!==''&&m.result?.home!==undefined).length>0&&(
         <>
           <div style={sec}>Comparativo por Jogo</div>
